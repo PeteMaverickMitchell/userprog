@@ -115,6 +115,11 @@ void thread_sleep (int64_t ticks);
 bool cmp_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 void thread_wakeup (int64_t global_ticks);
 
+/* Scheduling by comparing the priorities of the current thread and the thread with the highest priority */
+void test_max_priority (void);
+/* Compare the priorities of threads given as arguments */
+bool cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 void thread_tick (void);
 void thread_print_stats (void);
 

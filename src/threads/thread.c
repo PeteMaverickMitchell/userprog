@@ -1,78 +1,4 @@
-#include "threads/thread.h"
-#include <debug.h>
-#include <stddef.h>
-#include <random.h>
-#include <stdio.h>
-#include <string.h>
-#include "threads/flags.h"
-#include "threads/interrupt.h"
-#include "threads/intr-stubs.h"
-#include "threads/palloc.h"
-#include "threads/switch.h"
-#include "threads/synch.h"
-#include "threads/vaddr.h"
-#ifdef USERPROG
-#include "userprog/process.h"
-#endif
-
-/* Random value for struct thread's `magic' member.
-   Used to detect stack overflow.  See the big comment at the top
-   of thread.h for details. */
-#define THREAD_MAGIC 0xcd6abf4b
-
-/* List of processes in THREAD_READY state, that is, processes
-   that are ready to run but not actually running. */
-static struct list ready_list;
-
-/* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
-static struct list all_list;
-
-/* List of processes that are in sleep state. */
-static struct list sleep_list;
-
-/* Idle thread. */
-static struct thread *idle_thread;
-
-/* Initial thread, the thread running init.c:main(). */
-static struct thread *initial_thread;
-
-/* Lock used by allocate_tid(). */
-static struct lock tid_lock;
-
-/* Stack frame for kernel_thread(). */
-struct kernel_thread_frame 
-  {
-    void *eip;                  /* Return address. */
-    thread_func *function;      /* Function to call. */
-    void *aux;                  /* Auxiliary data for function. */
-  };
-
-/* Statistics. */
-static long long idle_ticks;    /* # of timer ticks spent idle. */
-static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
-static long long user_ticks;    /* # of timer ticks in user programs. */
-
-/* Scheduling. */
-#define TIME_SLICE 4            /* # of timer ticks to give each thread. */
-static unsigned thread_ticks;   /* # of timer ticks since last yield. */
-
-/* If false (default), use round-robin scheduler.
-   If true, use multi-level feedback queue scheduler.
-   Controlled by kernel command-line option "-o mlfqs". */
-bool thread_mlfqs;
-
-static void kernel_thread (thread_func *, void *aux);
-
-static void idle (void *aux UNUSED);
-static struct thread *running_thread (void);
-static struct thread *next_thread_to_run (void);
-static void init_thread (struct thread *, const char *name, int priority);
-static bool is_thread (struct thread *) UNUSED;
-static void *alloc_frame (struct thread *, size_t size);
-static void schedule (void);
-void thread_schedule_tail (struct thread *prev);
-static tid_t allocate_tid (void);
+tid_t allocate_tid (void);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -199,7 +125,24 @@ thread_wakeup(int64_t current_ticks)
  }
  intr_set_level(old_level);
  /*changes interrupt status back to normal */
-}    
+}   
+
+bool
+cmp_priority (const struct list_elem *a_, const struct list_elem *b_, void* aux UNUSED)
+{
+ /* Determine which sorting method to use in the list_insert_ordered() function */
+ return list_entry (a_, struct thread, elem)->priority > list_entry (b_, struct thread, elem)->priority;
+}
+
+void
+test_max_priority (void)
+{
+ /* Scheduling by comparing the priority of the current thread with the thread with the highest priority in ready_list */
+ if (!list_empty (&ready_list) && thread_current ()->priority < list_entry (list_front (&ready_list), struct thread, elem)->priority)
+  {
+    thread_yield ();
+  }
+} 
 
 /* Prints thread statistics. */
 void
@@ -270,6 +213,12 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  
+  /* If the priority of the created thread is higher than the priority of the currently running thread, yield the CPU. */
+  if (priority > thread_get_priority ())
+  {
+   thread_yield ();
+  }
 
   return tid;
 }
@@ -307,7 +256,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  /* Remove list_push_back() and modify it so that when the current thread yields the CPU and inserts into ready_list, they are sorted in priority order. */
+  list_insert_ordered (&ready_list, &t->elem, cmp_priority, 0);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -378,7 +328,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    /* Remove list_push_back() and modify it so that when the current thread yields the CPU and inserts into ready_list, they are sorted in priority order. */
+    list_insert_ordered (&ready_list, &cur->elem, cmp_priority, 0);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -406,6 +357,8 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  /* When the priority of a thread changes, ensure that it is preempted according to priority */
+  test_max_priority ();
 }
 
 /* Returns the current thread's priority. */
