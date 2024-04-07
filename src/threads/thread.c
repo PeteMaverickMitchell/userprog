@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* List of processes that are in sleep state. */
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -92,6 +95,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -139,13 +143,71 @@ thread_tick (void)
     intr_yield_on_return ();
 }
 
+void
+thread_sleep(int64_t ticks)
+{
+ struct thread *curr;
+ enum intr_level old_level;
+ old_level = intr_disable();
+ /* disables interrupt */
+
+ curr = thread_current();
+ /* curren thread */
+ ASSERT(curr != idle_thread);
+ /* only if curren thread is not idle */
+        
+ curr->wakeup_ticks = ticks;
+ /* stores wakeup time */
+ list_insert_ordered(&sleep_list, &curr->elem, cmp_thread_ticks, NULL);
+ /* add to sleep_list */
+ thread_block();
+ /* make current thread go to sleep */
+ intr_set_level(old_level);
+ /* changes interrupt state back to normal */
+}
+
+bool 
+cmp_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+ struct thread *st_a = list_entry(a, struct thread, elem);
+ struct thread *st_b = list_entry(b, struct thread, elem);
+ return st_a->wakeup_ticks < st_b->wakeup_ticks;
+}
+
+void 
+thread_wakeup(int64_t current_ticks)
+{
+ enum intr_level old_level;
+ old_level = intr_disable();
+ /* disables interrupt */
+ 
+ struct list_elem *curr_elem = list_begin(&sleep_list);
+ while (curr_elem != list_end(&sleep_list))
+ {
+  struct thread *curr_thread = list_entry(curr_elem, struct thread, elem);
+  /* element's thread that is currently on checking */
+  
+  if (current_ticks >= curr_thread->wakeup_ticks) /* if it is time to wake-up */
+  {
+   curr_elem = list_remove(curr_elem);
+   /* remove from sleep_list, next element is added to curr_elem */
+   thread_unblock(curr_thread);
+   /* move to ready_list */ 
+  }
+  else
+   break;
+ }
+ intr_set_level(old_level);
+ /*changes interrupt status back to normal */
+}    
+
 /* Prints thread statistics. */
 void
 thread_print_stats (void) 
 {
   printf ("Thread: %lld idle ticks, %lld kernel ticks, %lld user ticks\n",
           idle_ticks, kernel_ticks, user_ticks);
-}
+}    
 
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
