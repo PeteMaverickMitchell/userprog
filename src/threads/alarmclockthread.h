@@ -88,10 +88,8 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
-    
-    int64_t wakeup_ticks;               /* adds time to wake up */
- 
     struct list_elem allelem;           /* List element for all threads list. */
+    int64_t wakeup_ticks;               /* time to wake-up */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -114,8 +112,8 @@ void thread_init (void);
 void thread_start (void);
 
 void thread_sleep (int64_t ticks);
+bool cmp_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 void thread_wakeup (int64_t global_ticks);
-bool cmp_thread_ticks(const struct list_elem*a, const struct list_elem*b, void*aux);
 
 void thread_tick (void);
 void thread_print_stats (void);
