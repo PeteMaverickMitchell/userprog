@@ -168,15 +168,16 @@ thread_wakeup(int64_t current_ticks)
 }
 
 void 
-test_max_priority(void) 
+test_max_priority (void)
 {
- if (!list_empty(&ready_list)) 
- {
-  struct thread *top_pri = list_begin(&ready_list);
-   if (cmp_priority(top_pri, &thread_current()->elem, NULL))
-   {
-       thread_yield();
-   } 
+  /* Scheduling is performed by comparing the priority of the current thread with the thread with the highest priority in ready_list. i.e. preemption (check if ready_list is not empty) */
+  if(list_empty(&ready_list)){return;}
+  // Highest priority thread in ready_list
+  struct list_elem* e=list_front(&ready_list);
+  struct thread *t=list_entry(e, struct thread, elem);
+  // If the highest priority thread in the ready list has a higher priority, it is preempted.
+  if(thread_get_priority() < t->priority){
+    thread_yield();
   }
 }
 
