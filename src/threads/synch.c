@@ -169,7 +169,8 @@ sema_up (struct semaphore *sema)
 }
   sema->value++;
   intr_set_level (old_level);
-  priority_preemption();
+  if (!intr_context())
+    priority_preemption();
 }
 
 static void sema_test_helper (void *sema_);
@@ -247,7 +248,12 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
- 
+  if (thread_mlfqs)
+{
+   sema_down (&lock->semaphore);
+   lock->holder = thread_current();
+   return;
+}
   struct thread *cur = thread_current (); 
   if (lock->holder != NULL)
 {
@@ -291,6 +297,12 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
   
+  if (thread_mlfqs)
+{
+  lock->holder = NULL;
+  sema_up (&lock->semaphore);
+  return;
+}
   refresh_donation(lock); 
   refresh_priority();
   

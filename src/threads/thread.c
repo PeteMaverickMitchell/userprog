@@ -97,7 +97,7 @@ void priority_preemption (void)
 	return;
   struct thread *cur = thread_current();
   struct thread *t = list_entry(list_front(&ready_list), struct thread, elem);
-  if (t->priority > cur->priority)
+  if (t->priority > cur->priority && !intr_context())
 	thread_yield(); 
 }
 /* Initializes the threading system by transforming the code
@@ -143,6 +143,11 @@ thread_start (void)
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   // Add initialization part
+  /* int ready_threads = list_size(&ready_list);
+    if(thread_current != idle_thread)
+      ready_threads++;
+  int init_la = div_fp(int_to_fp(1), int_to_fp(60));
+  init_la = mult_mixed(init_la, ready_threads); */
   load_avg = LOAD_AVG_DEFAULT;
 
   /* Start preemptive thread scheduling. */
@@ -418,8 +423,9 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  struct thread *cur = thread_current();
-  
+  if (thread_mlfqs)
+   return;
+  struct thread *cur = thread_current(); 
   cur->priority = new_priority;
   cur->init_priority = new_priority;
   refresh_priority();
@@ -644,7 +650,8 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 void
 donate_priority (void)
 {
-
+  if (thread_mlfqs)
+    return;
   struct thread *cur = thread_current ();
   struct lock *now_lock = cur->wait_on_lock;
   int i = 0; 
@@ -734,10 +741,11 @@ mlfqs_recalc_recent_cpu(void)
 void 
 mlfqs_priority (struct thread *t)
 {
+  int tnice = t->nice;
   if(t==idle_thread){return;}
-  int temp=add_fp(int_to_fp(PRI_MAX), div_mixed(t->recent_cpu, -4));
-  temp=add_fp(temp, int_to_fp(-2 * t->nice));
-  t->priority=fp_to_int(temp);
+  int temp= PRI_MAX + fp_to_int_round(div_mixed(t->recent_cpu, -4));
+  temp= temp + -2*tnice;
+  t->priority= temp;
   if (t->priority > PRI_MAX) {
     t->priority = PRI_MAX;
   }
