@@ -18,13 +18,11 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-#define MAX_ARGS 32 // Define maximum number of arguments
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* Starts a new thread running a user program loaded from
-  : FILENAME.  The new thread may be scheduled (and may even exit)
+   FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
@@ -39,10 +37,6 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-
-  /* Parse the file_name to extract program name and arguments */
-  char *save_ptr;
-  char *program_name = strtok_r(fn_copy, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -60,32 +54,17 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  /* Parse file name and arguments */
-  char *argv[MAX_ARGS]; // Maximum number of arguments
-  int argc = 0;
-  char *token, *save_ptr;
-  for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
-      argv[argc++] = token;
-      if (argc >= MAX_ARGS) {
-          break;
-      }
-  }
-
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
-  if_.esp = PHYS_BASE;
-  
-  success = load (argv[0], &if_.eip, &if_.esp);
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
-
-  /* Set up the stack with command line arguments */
-  argument_stack(argv, argc, &if_.esp);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -95,47 +74,6 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
-}
-
-/* Parses arguments and sets up the stack */
-void 
-argument_stack(const char *argv[], int argc, void **esp) {
-    int i, total_len = 0;
-    void *arg_ptr[argc];
-
-    /* Push arguments onto the stack in reverse order */
-    for (i = argc - 1; i >= 0; i--) {
-        int len = strlen(argv[i]) + 1; // Include null terminator
-        *esp -= len;
-        memcpy(*esp, argv[i], len);
-        arg_ptr[i] = *esp;
-        total_len += len;
-    }
-
-    /* Word align */
-    *esp -= total_len % 4;
-
-    /* Null-terminate the last word */
-    *esp -= 4;
-    *((uint32_t *)(*esp)) = 0;
-
-    /* Push addresses of arguments onto the stack */
-    for (i = argc - 1; i >= 0; i--) {
-        *esp -= 4;
-        *((void **)(*esp)) = arg_ptr[i];
-    }
-
-    /* Push address of argv[0] (argv) */
-    *esp -= 4;
-    *((char ***)(*esp)) = (*esp + 4);
-
-    /* Push argc */
-    *esp -= 4;
-    *((int *)(*esp)) = argc;
-
-    /* Push fake return address */
-    *esp -= 4;
-    *((void **)(*esp)) = 0;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
